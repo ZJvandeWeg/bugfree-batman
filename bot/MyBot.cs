@@ -4,28 +4,51 @@ using System.Collections.Generic;
 namespace Ants {
 
 	class MyBot : Bot {
-		int[,] R;
-		double [,] Q;
-		const double Alpha = 0.6; //
-		const double Gamma = 0.6; //
-
-		const int WaterReward 	= -10;
-		const int FoodReward 	= 50;
+		Dictionary<State, Dictionary<Action, double>> Q;
+		const double Alpha = 0.6; 
+		const double Gamma = 0.6; 
+		int maxDistance;
+		List<Action> actions = new List<Action>();
 
 		// DoTurn is run once per turn
 		public override void DoTurn (IGameState state) {
-			if(R == null) {
-				R = new int[state.Width, state.Height];
-				Q = new double[state.Width, state.Height];
-			}
+			if (Q == null) {
 
-			for (int x = 0; x < state.Width; x++) {
-				for (int y = 0; y < state.Height; y++) {
-					if (!state.IsPassable(x, y))
-						R[x,y] = WaterReward;
-					else if (state[x,y] == Tile.Food)
-						R[x,y] = FoodReward; 
-				}	
+				maxDistance = state.Width / 2 + state.Height / 2;
+
+
+				Q = new Dictionary<State, Dictionary<Action, double>>();
+
+				foreach (StateParameter parameter in (StateParameter[]) Enum.GetValues(typeof(StateParameter)))
+				{
+					Action a = new Action(parameter, ActionDirection.Towards);
+					actions.Add(a);
+					a = new Action(parameter, ActionDirection.AwayFrom);
+					actions.Add(a);
+				}
+
+
+				foreach (StateParameter parameter in (StateParameter[]) Enum.GetValues(typeof(StateParameter)))
+				{
+					for (int i = 0; i <= maxDistance; i++)
+					{
+						Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
+						distances[StateParameter.Food] = i;
+
+						for (int j = 0; j <= maxDistance; j++)
+						{
+							distances[StateParameter.EnemyAnt] = j;
+						}
+
+						State s = new State(distances);
+						Q[s] = new Dictionary<Action, double>();
+
+						foreach (Action a in actions)
+						{
+							Q[s][a] = 0.0;
+						}
+					}
+				}
 			}
 
 			// loop through all my ants and try to give them orders
@@ -49,10 +72,10 @@ namespace Ants {
 				if (state.TimeRemaining < 10) break;
 			}
 
-			double q = Q[state, action];
-			int r = R[state, action];
-			double maxQ = maxQ(action);
-			Q[state, action] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
+		//	double q = Q[state, action];
+		//	int r = R[state, action];
+		//`	double maxQ = maxQ(action);
+		//	Q[state, action] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
 		}
 		
 		
