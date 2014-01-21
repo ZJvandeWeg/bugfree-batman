@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.IO;
 
 namespace Ants {
 
 	class MyBot : Bot {
 		private Dictionary<State, Dictionary<Action, double>> Q;
-		private const double Alpha = 0.6; 
-		private const double Gamma = 0.6; 
+		private const double Alpha = 0.1; 
+		private const double Gamma = 0.5; 
 		private int maxDistance;
 		private List<Action> actions = new List<Action>();
 		private Dictionary<State, Action> performedActions = new Dictionary<State, Action>();
@@ -16,6 +17,25 @@ namespace Ants {
 		// DoTurn is run once per turn
 		public override void DoTurn (IGameState gameState) {
 			if (Q == null) {
+				Dictionary<int, Dictionary<int, double>> knownQ = new Dictionary<int, Dictionary<int, double>>();
+
+				FileStream fs = new FileStream("q.log", FileMode.Open, FileAccess.Read);
+				StreamReader sr = new StreamReader(fs);
+				string line;
+				while ((line = sr.ReadLine()) != null)
+				{
+					string[] parts = line.Split(',');
+					int stateCode = int.Parse(parts[0]);
+					int actionCode = int.Parse(parts[1]);
+					double q = double.Parse(parts[2]);
+					if (!knownQ.ContainsKey(stateCode))
+					{
+						knownQ[stateCode] = new Dictionary<int, double>();
+					}
+					knownQ[stateCode][actionCode] = q;
+				}
+				sr.Close();
+				fs.Close();
 
 				maxDistance = gameState.Width / 2 + gameState.Height / 2;
 				Q = new Dictionary<State, Dictionary<Action, double>>();
@@ -40,13 +60,17 @@ namespace Ants {
 						State s = new State(new Dictionary<StateParameter, int>(distances));
 						Q[s] = new Dictionary<Action, double>();
 
-						foreach (Action a in actions) {					
-							Q[s][a] = 0.0;
+						foreach (Action a in actions) {
+							int stateCode = s.GetHashCode();
+							int actionCode = a.GetHashCode();
+							double q = 0.0;
+							if (knownQ.ContainsKey(stateCode) && knownQ[stateCode].ContainsKey(actionCode)) {
+								q = knownQ[stateCode][actionCode];
+							}			
+							Q[s][a] = q;
 						}
 					}
 				}
-
-
 			}
 
 			// Q's updaten
@@ -71,11 +95,25 @@ namespace Ants {
 			// loop through all my ants and try to give them orders
 			foreach (Ant ant in gameState.MyAnts) {
 				//Build the state per ant.
+				Location target;
+				Action nextAction = null;
+
 				State state = buildState(gameState, ant);
 
-				Action nextAction;
+				// Use learned Q values
+				/*double maxQ = double.MinValue;
+				foreach(KeyValuePair<Action, double>pair in Q[state])
+				{
+					if (pair.Value > maxQ)
+					{
+						maxQ = pair.Value;
+						nextAction = pair.Key;
+					}
+				}
+				target = state.Targets[nextAction.Parameter];*/
+
+				// Random
 				int distance;
-				Location target;
 				do {
 					nextAction = actions[new Random().Next(actions.Count)];
 					distance = state.Distances[nextAction.Parameter];
@@ -90,6 +128,22 @@ namespace Ants {
 					direction = direction.Opposite();
 				IssueOrder(ant, direction);
 			}
+
+			FileStream fs1 = new FileStream("q.log", FileMode.Create, FileAccess.Write);
+			StreamWriter sw = new StreamWriter(fs1);
+			foreach(KeyValuePair<State, Dictionary<Action, double>> pair in Q)
+			{
+				State state = pair.Key;
+				foreach(KeyValuePair<Action, double>pair2 in pair.Value)
+				{
+					Action action = pair2.Key;
+					double q = pair2.Value;
+
+					sw.WriteLine(state.GetHashCode() + "," + action.GetHashCode() + "," + q);
+				}
+			}
+			sw.Close();
+			fs1.Close();
 
 		}
 		
@@ -109,6 +163,7 @@ namespace Ants {
 					closestFood = food;
 				}
 			}
+
 			distances[StateParameter.Food] = foodDistance;
 			targets[StateParameter.Food] = closestFood;
 
