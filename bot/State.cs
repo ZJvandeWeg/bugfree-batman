@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Ants {
 
-	public enum StateParameter { Food, EnemyAnt }
+	public enum StateParameter { Food/*, OwnAnt, OwnHill*/ }
 
 	class State
 	{
@@ -25,7 +25,7 @@ namespace Ants {
 			int code = 0;
 			foreach (KeyValuePair<StateParameter, int> pair in Distances)
 			{
-				code += pair.Value * (int)pair.Key * 100;
+				code += pair.Value * (int)Math.Pow(100, (int)pair.Key);
 			}
 			return code;
 		}

@@ -8,18 +8,60 @@ namespace Ants {
 	class MyBot : Bot {
 		private Dictionary<State, Dictionary<Action, double>> Q;
 		private const double Alpha = 0.1; 
+		private const int Beta = 10; 
 		private const double Gamma = 0.5; 
 		private int maxDistance;
 		private List<Action> actions = new List<Action>();
 		private Dictionary<State, Action> performedActions = new Dictionary<State, Action>();
 		private int previousMyAntsCount;
+		private string logFileName;
+		private bool useLearned;
 
 		// DoTurn is run once per turn
 		public override void DoTurn (IGameState gameState) {
+			//Init Q, with data from previous runs.
+			initQ(gameState);
+
+			//Learn new shit this turn?
+			useLearned = new Random().Next(0,100) < Beta;
+
+			// Q's updaten
+			updateQ(gameState);
+
+			// loop through all my ants and try to give them orders
+			orderAnts(gameState);
+
+			FileStream fs1 = new FileStream(logFileName, FileMode.Create, FileAccess.Write);
+			StreamWriter sw = new StreamWriter(fs1);
+			foreach(KeyValuePair<State, Dictionary<Action, double>> pair in Q)
+			{
+				State state = pair.Key;
+				foreach(KeyValuePair<Action, double>pair2 in pair.Value)
+				{
+					Action action = pair2.Key;
+					double q = pair2.Value;
+
+					sw.WriteLine(state.GetHashCode() + "," + action.GetHashCode() + "," + q);
+				}
+			}
+			sw.Close();
+			fs1.Close();
+
+		}
+
+		public void initQ(IGameState gameState)
+		{
 			if (Q == null) {
+			 	logFileName = "q" + gameState.Width + "," + gameState.Height + ".log";
+
 				Dictionary<int, Dictionary<int, double>> knownQ = new Dictionary<int, Dictionary<int, double>>();
 
-				FileStream fs = new FileStream("q.log", FileMode.Open, FileAccess.Read);
+				if(!File.Exists(logFileName))
+				{
+					File.Create(logFileName);
+				}
+
+				FileStream fs = new FileStream(logFileName, FileMode.Open, FileAccess.Read);
 				StreamReader sr = new StreamReader(fs);
 				string line;
 				while ((line = sr.ReadLine()) != null)
@@ -49,31 +91,37 @@ namespace Ants {
 				}
 
 				//This is ugly
-				for (int i = -1; i <= maxDistance; i++)
+				Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
+				for (int i = 0; i <= maxDistance + 1; i++)
 				{
-					Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
-					distances[StateParameter.Food] = i == -1 ? int.MaxValue : i;
+					distances[StateParameter.Food] = i;
 
-					for (int j = -1; j <= maxDistance; j++) {						
-						distances[StateParameter.EnemyAnt] = j == -1 ? int.MaxValue : j;
+					//for (int j = 0; j <= maxDistance + 1; j++) {						
+					//	distances[StateParameter.OwnAnt] = j;
 
-						State s = new State(new Dictionary<StateParameter, int>(distances));
-						Q[s] = new Dictionary<Action, double>();
+					//	for (int k = 0; k <= 1; k++) {						
+					//		distances[StateParameter.OwnHill] = k;
 
-						foreach (Action a in actions) {
-							int stateCode = s.GetHashCode();
-							int actionCode = a.GetHashCode();
-							double q = 0.0;
-							if (knownQ.ContainsKey(stateCode) && knownQ[stateCode].ContainsKey(actionCode)) {
-								q = knownQ[stateCode][actionCode];
-							}			
-							Q[s][a] = q;
-						}
-					}
+							State s = new State(new Dictionary<StateParameter, int>(distances));
+							Q[s] = new Dictionary<Action, double>();
+
+							foreach (Action a in actions) {
+								int stateCode = s.GetHashCode();
+								int actionCode = a.GetHashCode();
+								double q = 0.0;
+								if (knownQ.ContainsKey(stateCode) && knownQ[stateCode].ContainsKey(actionCode)) {
+									q = knownQ[stateCode][actionCode];
+								}			
+								Q[s][a] = q;
+							}
+					//	}
+					//}
 				}
 			}
-
-			// Q's updaten
+		}
+		
+		public void updateQ(IGameState gameState)
+		{
 			foreach(KeyValuePair<State, Action>pair in performedActions)
 			{
 				State fromState = pair.Key;
@@ -90,9 +138,10 @@ namespace Ants {
 			}
 			performedActions.Clear();
 			previousMyAntsCount = gameState.MyAnts.Count;
+		}
 
-
-			// loop through all my ants and try to give them orders
+		public void orderAnts(IGameState gameState)
+		{
 			foreach (Ant ant in gameState.MyAnts) {
 				//Build the state per ant.
 				Location target;
@@ -100,85 +149,106 @@ namespace Ants {
 
 				State state = buildState(gameState, ant);
 
-				// Use learned Q values
-				/*double maxQ = double.MinValue;
-				foreach(KeyValuePair<Action, double>pair in Q[state])
+				if (useLearned)
 				{
-					if (pair.Value > maxQ)
+					// Use learned Q values
+					double maxQ = double.MinValue;
+					foreach(KeyValuePair<Action, double>pair in Q[state])
 					{
-						maxQ = pair.Value;
-						nextAction = pair.Key;
+						Action action = pair.Key;
+						double q = pair.Value;
+						if (q > maxQ && state.Targets[action.Parameter] != null)
+						{
+							maxQ = q;
+							nextAction = action;
+						}
 					}
 				}
-				target = state.Targets[nextAction.Parameter];*/
-
-				// Random
-				int distance;
-				do {
-					nextAction = actions[new Random().Next(actions.Count)];
-					distance = state.Distances[nextAction.Parameter];
-					target = state.Targets[nextAction.Parameter];
+				else {
+					// Random
+					int distance;
+					do {
+						nextAction = actions[new Random().Next(actions.Count)];
+						distance = state.Distances[nextAction.Parameter];
+					}
+					while(distance == maxDistance + 1 || state.Targets[nextAction.Parameter] == null);
 				}
-				while(distance == int.MaxValue);
+				
+				target = state.Targets[nextAction.Parameter];
+
+				if (target == null)
+					continue;
 
 				performedActions[state] = nextAction;
 
-				Direction direction = gameState.GetDirections(ant, target).First();
+				List<Direction> directions = (List<Direction>)(gameState.GetDirections(ant, target));
+				if (directions.Count == 0)
+					continue;
+
+				Direction direction = directions[new Random().Next(directions.Count)];
 				if (nextAction.Direction == ActionDirection.AwayFrom)
 					direction = direction.Opposite();
+
 				IssueOrder(ant, direction);
 			}
-
-			FileStream fs1 = new FileStream("q.log", FileMode.Create, FileAccess.Write);
-			StreamWriter sw = new StreamWriter(fs1);
-			foreach(KeyValuePair<State, Dictionary<Action, double>> pair in Q)
-			{
-				State state = pair.Key;
-				foreach(KeyValuePair<Action, double>pair2 in pair.Value)
-				{
-					Action action = pair2.Key;
-					double q = pair2.Value;
-
-					sw.WriteLine(state.GetHashCode() + "," + action.GetHashCode() + "," + q);
-				}
-			}
-			sw.Close();
-			fs1.Close();
-
 		}
-		
 		//Is ugly
-		public State buildState(IGameState gameState, Location loc)
+		public State buildState(IGameState gameState, Location ant)
 		{
 			Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
 			Dictionary<StateParameter, Location> targets = new Dictionary<StateParameter, Location>();
 			
-			int foodDistance = int.MaxValue;
-			Location closestFood = null;
+			int foodDistance = maxDistance + 1;
+			List<Location> closestFoods = new List<Location>();
 			foreach(Location food in gameState.FoodTiles) {
-				int delta = gameState.GetDistance(loc, food);
+				int delta = gameState.GetDistance(ant, food);
 				if (delta < foodDistance)
 				{ 
+					closestFoods.Clear();
 					foodDistance = delta;
-					closestFood = food;
+				}
+				if (delta <= foodDistance) {
+					closestFoods.Add(food);
 				}
 			}
+			Location closestFood = closestFoods.Count == 0 ? null : closestFoods[new Random().Next(closestFoods.Count)];
 
 			distances[StateParameter.Food] = foodDistance;
 			targets[StateParameter.Food] = closestFood;
 
-			int enemyDistance = int.MaxValue;
-			Location closestEnemy = null;
-			foreach(Location enemy in gameState.EnemyAnts) {
-				int delta = gameState.GetDistance(loc, enemy);
-				if (delta < enemyDistance) 
+			/*
+			int friendDistance = maxDistance + 1;
+			List<Location> closestFriends = new List<Location>();
+			foreach(Location friend in gameState.MyAnts) {
+				if (friend == ant) continue;
+				int delta = gameState.GetDistance(ant, friend);
+				if (delta < friendDistance) 
 				{
-					enemyDistance = delta;
-					closestEnemy = enemy;
+					closestFriends.Clear();
+					friendDistance = delta;
+				}
+				if (delta <= friendDistance) {
+					closestFriends.Add(friend);
 				}
 			}
-			distances[StateParameter.EnemyAnt] = enemyDistance;
-			targets[StateParameter.EnemyAnt] = closestEnemy;
+			Location closestFriend = closestFriends.Count == 0 ? null : closestFriends[new Random().Next(closestFriends.Count)];
+
+			distances[StateParameter.OwnAnt] = friendDistance;
+			targets[StateParameter.OwnAnt] = closestFriend;
+
+			bool onHill = false;
+			Location closestHill = null;
+			foreach(Location hill in gameState.MyHills) {
+				if (ant == hill)
+				{
+					onHill = true;
+					closestHill = hill;
+					break;
+				}
+			}
+			distances[StateParameter.OwnHill] = onHill ? 0 : 1;
+			targets[StateParameter.OwnHill] = closestHill;
+			*/
 
 			return new State(distances, targets);
 		}
