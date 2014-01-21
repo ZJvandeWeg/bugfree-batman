@@ -1,22 +1,23 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Ants {
 
 	class MyBot : Bot {
-		Dictionary<State, Dictionary<Action, double>> Q;
-		const double Alpha = 0.6; 
-		const double Gamma = 0.6; 
-		int maxDistance;
-		List<Action> actions = new List<Action>();
+		private Dictionary<State, Dictionary<Action, double>> Q;
+		private const double Alpha = 0.6; 
+		private const double Gamma = 0.6; 
+		private int maxDistance;
+		private List<Action> actions = new List<Action>();
+		private Dictionary<State, Action> performedActions = new Dictionary<State, Action>();
+		private int previousMyAntsCount;
 
 		// DoTurn is run once per turn
-		public override void DoTurn (IGameState state) {
+		public override void DoTurn (IGameState gameState) {
 			if (Q == null) {
 
-				maxDistance = state.Width / 2 + state.Height / 2;
-
-
+				maxDistance = gameState.Width / 2 + gameState.Height / 2;
 				Q = new Dictionary<State, Dictionary<Action, double>>();
 
 				foreach (StateParameter parameter in (StateParameter[]) Enum.GetValues(typeof(StateParameter)))
@@ -27,58 +28,118 @@ namespace Ants {
 					actions.Add(a);
 				}
 
-
-				foreach (StateParameter parameter in (StateParameter[]) Enum.GetValues(typeof(StateParameter)))
+				//This is ugly
+				for (int i = -1; i <= maxDistance; i++)
 				{
-					for (int i = 0; i <= maxDistance; i++)
-					{
-						Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
-						distances[StateParameter.Food] = i;
+					Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
+					distances[StateParameter.Food] = i == -1 ? int.MaxValue : i;
 
-						for (int j = 0; j <= maxDistance; j++)
-						{
-							distances[StateParameter.EnemyAnt] = j;
-						}
+					for (int j = -1; j <= maxDistance; j++) {						
+						distances[StateParameter.EnemyAnt] = j == -1 ? int.MaxValue : j;
 
-						State s = new State(distances);
+						State s = new State(new Dictionary<StateParameter, int>(distances));
 						Q[s] = new Dictionary<Action, double>();
 
-						foreach (Action a in actions)
-						{
+						foreach (Action a in actions) {					
 							Q[s][a] = 0.0;
 						}
 					}
 				}
+
+
 			}
+
+			// Q's updaten
+			foreach(KeyValuePair<State, Action>pair in performedActions)
+			{
+				State fromState = pair.Key;
+				Action action = pair.Value;
+
+				State nextState = fromState.ApplyAction(action);
+
+				// Loss of ant: -100, gain of ant: 100
+				int r = (gameState.MyAnts.Count - previousMyAntsCount) * 100;
+
+				double q = Q[fromState][action];
+				double maxQ = MaxQ(nextState);
+				Q[fromState][action] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
+			}
+			performedActions.Clear();
+			previousMyAntsCount = gameState.MyAnts.Count;
+
 
 			// loop through all my ants and try to give them orders
-			foreach (Ant ant in state.MyAnts) {
-				
-				// try all the directions
-				foreach (Direction direction in Ants.Aim.Keys) {
+			foreach (Ant ant in gameState.MyAnts) {
+				//Build the state per ant.
+				State state = buildState(gameState, ant);
 
-					// GetDestination will wrap around the map properly
-					// and give us a new location
-					Location newLoc = state.GetDestination(ant, direction);
-
-					// GetIsPassable returns true if the location is land
-					if (state.GetIsPassable(newLoc)) {
-						IssueOrder(ant, direction);
-						// stop now, don't give 1 and multiple orders
-						break;
-					}
+				Action nextAction;
+				int distance;
+				Location target;
+				do {
+					nextAction = actions[new Random().Next(actions.Count)];
+					distance = state.Distances[nextAction.Parameter];
+					target = state.Targets[nextAction.Parameter];
 				}
-				// check if we have time left to calculate more orders
-				if (state.TimeRemaining < 10) break;
+				while(distance == int.MaxValue);
+
+				performedActions[state] = nextAction;
+
+				Direction direction = gameState.GetDirections(ant, target).First();
+				if (nextAction.Direction == ActionDirection.AwayFrom)
+					direction = direction.Opposite();
+				IssueOrder(ant, direction);
 			}
 
-		//	double q = Q[state, action];
-		//	int r = R[state, action];
-		//`	double maxQ = maxQ(action);
-		//	Q[state, action] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
 		}
 		
-		
+		//Is ugly
+		public State buildState(IGameState gameState, Location loc)
+		{
+			Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
+			Dictionary<StateParameter, Location> targets = new Dictionary<StateParameter, Location>();
+			
+			int foodDistance = int.MaxValue;
+			Location closestFood = null;
+			foreach(Location food in gameState.FoodTiles) {
+				int delta = gameState.GetDistance(loc, food);
+				if (delta < foodDistance)
+				{ 
+					foodDistance = delta;
+					closestFood = food;
+				}
+			}
+			distances[StateParameter.Food] = foodDistance;
+			targets[StateParameter.Food] = closestFood;
+
+			int enemyDistance = int.MaxValue;
+			Location closestEnemy = null;
+			foreach(Location enemy in gameState.EnemyAnts) {
+				int delta = gameState.GetDistance(loc, enemy);
+				if (delta < enemyDistance) 
+				{
+					enemyDistance = delta;
+					closestEnemy = enemy;
+				}
+			}
+			distances[StateParameter.EnemyAnt] = enemyDistance;
+			targets[StateParameter.EnemyAnt] = closestEnemy;
+
+			return new State(distances, targets);
+		}
+
+		public double MaxQ(State state)
+		{
+			double maxQ = double.MinValue;
+			foreach(Action action in actions)
+			{
+				double q = Q[state][action];
+				if (q > maxQ)
+					maxQ = q;
+			}
+			return maxQ;
+		}
+
 		public static void Main (string[] args) {
 			new Ants().PlayGame(new MyBot());
 		}

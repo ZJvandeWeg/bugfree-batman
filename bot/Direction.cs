@@ -30,6 +30,27 @@ namespace Ants {
 					throw new ArgumentException ("Unknown direction", "self");
 			}
 		}
+
+		public static Direction Opposite(this Direction self)
+		{
+			switch (self)
+			{
+				case Direction.East:
+					return Direction.West;
+
+				case Direction.North:
+					return Direction.South;
+
+				case Direction.South:
+					return Direction.North;
+
+				case Direction.West:
+					return Direction.East;
+
+				default:
+					throw new ArgumentException ("Unknown direction", "self");
+			}
+		}
 	}
 }
 

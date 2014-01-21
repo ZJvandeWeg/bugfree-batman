@@ -7,7 +7,13 @@ namespace Ants {
 
 	class State
 	{
-		public Dictionary<StateParameter, int> Distances = new Dictionary<StateParameter, int>();
+		public Dictionary<StateParameter, int> Distances;
+		public Dictionary<StateParameter, Location> Targets;
+
+		public State(Dictionary<StateParameter, int> distances, Dictionary<StateParameter, Location> targets) : this(distances)
+		{
+			Targets = targets;
+		}
 
 		public State(Dictionary<StateParameter, int> distances)
 		{
@@ -22,6 +28,33 @@ namespace Ants {
 				code += pair.Value * (int)pair.Key * 100;
 			}
 			return code;
+		}
+
+		public override bool Equals(Object obj)
+		{
+			if (obj == null || !(obj is State))
+				return false;
+
+			State other = (State)obj;
+			foreach (KeyValuePair<StateParameter, int> pair in this.Distances)
+			{
+				int distance = pair.Value;
+				int otherDistance = other.Distances[pair.Key];
+				if (distance != otherDistance)
+					return false;
+			}
+			return true;
+		}
+
+		public State ApplyAction(Action action)
+		{
+			Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>(this.Distances);
+			if (action.Direction == ActionDirection.Towards)
+				distances[action.Parameter]--;
+			else
+				distances[action.Parameter]++;
+
+			return new State(distances);
 		}
 	}
 }

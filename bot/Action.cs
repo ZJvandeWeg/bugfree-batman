@@ -20,5 +20,14 @@ namespace Ants {
 		{
 			return (int)Parameter * 100 + (int)Direction;
 		}
+
+		public override bool Equals(Object obj)
+		{
+			if (obj == null || !(obj is Action))
+				return false;
+
+			Action other = (Action)obj;
+			return (this.Parameter == other.Parameter && this.Direction == other.Direction);
+		}
 	}
 }
