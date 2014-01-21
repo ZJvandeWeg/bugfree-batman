@@ -8,7 +8,7 @@ namespace Ants {
 	class MyBot : Bot {
 		private Dictionary<State, Dictionary<Action, double>> Q;
 		private const double Alpha = 0.1; 
-		private const int Beta = 10; 
+		private const int Beta = 96; 
 		private const double Gamma = 0.5; 
 		private int maxDistance;
 		private List<Action> actions = new List<Action>();
