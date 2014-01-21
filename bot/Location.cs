@@ -15,6 +15,13 @@ namespace Ants {
 		/// </summary>
 		public int Col { get; private set; }
 
+		public Location (string input)
+		{
+			string[] parts = input.Split(',');
+			this.Row = int.Parse(parts[0]);
+			this.Col = int.Parse(parts[1]);
+		}
+
 		public Location (int row, int col) {
 			this.Row = row;
 			this.Col = col;
@@ -46,6 +53,11 @@ namespace Ants {
 				return (this.Row * 397) ^ this.Col;
 			}
 		}
+
+		public override string ToString()
+		{
+			return this.Row + "," + this.Col;
+		}
 	}
 
 	public class TeamLocation : Location, IEquatable<TeamLocation> {
@@ -58,7 +70,11 @@ namespace Ants {
 			this.Team = team;
 		}
 
-		public bool Equals(TeamLocation other) {
+		public bool Equals (TeamLocation other) {
+			return base.Equals (other);
+		}
+
+		/*public bool Equals(TeamLocation other) {
 			return base.Equals (other) && other.Team == Team;
 		}
 
@@ -70,7 +86,7 @@ namespace Ants {
 				result = (result * 397) ^ this.Team;
 				return result;
 			}
-		}
+		}*/
 	}
 	
 	public class Ant : TeamLocation, IEquatable<Ant> {

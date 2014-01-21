@@ -6,14 +6,11 @@ using System.IO;
 namespace Ants {
 
 	class MyBot : Bot {
-		private Dictionary<State, Dictionary<Action, double>> Q;
-		private const double Alpha = 0.1; 
-		private const int Beta = 10; 
-		private const double Gamma = 0.5; 
-		private int maxDistance;
-		private List<Action> actions = new List<Action>();
-		private Dictionary<State, Action> performedActions = new Dictionary<State, Action>();
-		private int previousMyAntsCount;
+		private Dictionary<Location, Dictionary<Direction, double>> Q;
+		private const double Alpha = 1.0; 
+		private const int Beta = 100; 
+		private const double Gamma = 0;
+		private Dictionary<Location, Direction> performedMoves = new Dictionary<Location, Direction>();
 		private string logFileName;
 		private bool useLearned;
 
@@ -25,7 +22,6 @@ namespace Ants {
 			//Learn new shit this turn?
 			useLearned = new Random().Next(0,100) < Beta;
 
-			// Q's updaten
 			updateQ(gameState);
 
 			// loop through all my ants and try to give them orders
@@ -33,15 +29,15 @@ namespace Ants {
 
 			FileStream fs1 = new FileStream(logFileName, FileMode.Create, FileAccess.Write);
 			StreamWriter sw = new StreamWriter(fs1);
-			foreach(KeyValuePair<State, Dictionary<Action, double>> pair in Q)
+			foreach(KeyValuePair<Location, Dictionary<Direction, double>> pair in Q)
 			{
-				State state = pair.Key;
-				foreach(KeyValuePair<Action, double>pair2 in pair.Value)
+				Location loc = pair.Key;
+				foreach(KeyValuePair<Direction, double>pair2 in pair.Value)
 				{
-					Action action = pair2.Key;
+					Direction direction = pair2.Key;
 					double q = pair2.Value;
 
-					sw.WriteLine(state.GetHashCode() + "," + action.GetHashCode() + "," + q);
+					sw.WriteLine(loc.ToString() + " " + direction.ToChar() + " " + q);
 				}
 			}
 			sw.Close();
@@ -51,214 +47,148 @@ namespace Ants {
 
 		public void initQ(IGameState gameState)
 		{
-			if (Q == null) {
-			 	logFileName = "q" + gameState.Width + "," + gameState.Height + ".log";
+			if (Q != null) return;
 
-				Dictionary<int, Dictionary<int, double>> knownQ = new Dictionary<int, Dictionary<int, double>>();
+		 	logFileName = "q" + gameState.Width + "," + gameState.Height + ".log";
 
-				if(!File.Exists(logFileName))
+			Dictionary<Location, Dictionary<Direction, double>> knownQ = new Dictionary<Location, Dictionary<Direction, double>>();
+
+			if(!File.Exists(logFileName))
+			{
+				File.Create(logFileName);
+			}
+
+			FileStream fs = new FileStream(logFileName, FileMode.Open, FileAccess.Read);
+			StreamReader sr = new StreamReader(fs);
+			string line;
+			while ((line = sr.ReadLine()) != null)
+			{
+				string[] parts = line.Split();
+				Location loc = new Location(parts[0]);
+
+				Direction dir;
+				switch (parts[1][0])
 				{
-					File.Create(logFileName);
+					case 'e':
+						dir = Direction.East;
+						break;
+
+					case 'n':
+						dir = Direction.North;
+						break;
+
+					case 's':
+						dir = Direction.South;
+						break;
+
+					case 'w':
+					default:
+						dir = Direction.West;
+						break;
+
 				}
 
-				FileStream fs = new FileStream(logFileName, FileMode.Open, FileAccess.Read);
-				StreamReader sr = new StreamReader(fs);
-				string line;
-				while ((line = sr.ReadLine()) != null)
+				double q = double.Parse(parts[2]);
+				if (!knownQ.ContainsKey(loc))
 				{
-					string[] parts = line.Split(',');
-					int stateCode = int.Parse(parts[0]);
-					int actionCode = int.Parse(parts[1]);
-					double q = double.Parse(parts[2]);
-					if (!knownQ.ContainsKey(stateCode))
+					knownQ[loc] = new Dictionary<Direction, double>();
+				}
+				knownQ[loc][dir] = q;
+			}
+			sr.Close();
+			fs.Close();
+
+			Q = new Dictionary<Location, Dictionary<Direction, double>>();
+
+			//This is ugly
+			for (int x = 0; x < gameState.Width; x++)
+			{
+				for (int y = 0; y < gameState.Height; y++)
+				{	
+					Location loc = new Location(x, y);
+					Q[loc] = new Dictionary<Direction, double>();
+
+					foreach (Direction dir in (Direction[]) Enum.GetValues(typeof(Direction)))
 					{
-						knownQ[stateCode] = new Dictionary<int, double>();
+						double q = 0.0;
+						if (knownQ.ContainsKey(loc) && knownQ[loc].ContainsKey(dir)) {
+							q = knownQ[loc][dir];
+						}			
+						Q[loc][dir] = q;
 					}
-					knownQ[stateCode][actionCode] = q;
-				}
-				sr.Close();
-				fs.Close();
-
-				maxDistance = gameState.Width / 2 + gameState.Height / 2;
-				Q = new Dictionary<State, Dictionary<Action, double>>();
-
-				foreach (StateParameter parameter in (StateParameter[]) Enum.GetValues(typeof(StateParameter)))
-				{
-					Action a = new Action(parameter, ActionDirection.Towards);
-					actions.Add(a);
-					a = new Action(parameter, ActionDirection.AwayFrom);
-					actions.Add(a);
-				}
-
-				//This is ugly
-				Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
-				for (int i = 0; i <= maxDistance + 1; i++)
-				{
-					distances[StateParameter.Food] = i;
-
-					//for (int j = 0; j <= maxDistance + 1; j++) {						
-					//	distances[StateParameter.OwnAnt] = j;
-
-					//	for (int k = 0; k <= 1; k++) {						
-					//		distances[StateParameter.OwnHill] = k;
-
-							State s = new State(new Dictionary<StateParameter, int>(distances));
-							Q[s] = new Dictionary<Action, double>();
-
-							foreach (Action a in actions) {
-								int stateCode = s.GetHashCode();
-								int actionCode = a.GetHashCode();
-								double q = 0.0;
-								if (knownQ.ContainsKey(stateCode) && knownQ[stateCode].ContainsKey(actionCode)) {
-									q = knownQ[stateCode][actionCode];
-								}			
-								Q[s][a] = q;
-							}
-					//	}
-					//}
 				}
 			}
 		}
 		
 		public void updateQ(IGameState gameState)
 		{
-			foreach(KeyValuePair<State, Action>pair in performedActions)
+			foreach(KeyValuePair<Location, Direction>pair in performedMoves)
 			{
-				State fromState = pair.Key;
-				Action action = pair.Value;
+				Location loc = pair.Key;
+				Direction dir = pair.Value;
 
-				State nextState = fromState.ApplyAction(action);
+				Location nextLocation = gameState.GetDestination(loc, dir);
 
-				// Loss of ant: -100, gain of ant: 100
-				int r = (gameState.MyAnts.Count - previousMyAntsCount) * 100;
+				int r = 0;
+				if (!gameState.MyAnts.Contains(nextLocation) && 
+					!gameState.DeadTiles.Contains(nextLocation) &&
+					!gameState.DeadTiles.Contains(loc))
+					r = -100;
 
-				double q = Q[fromState][action];
-				double maxQ = MaxQ(nextState);
-				Q[fromState][action] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
+				double q = Q[loc][dir];
+				double maxQ = MaxQ(nextLocation);
+				Q[loc][dir] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
 			}
-			performedActions.Clear();
-			previousMyAntsCount = gameState.MyAnts.Count;
+			performedMoves.Clear();
 		}
 
 		public void orderAnts(IGameState gameState)
 		{
 			foreach (Ant ant in gameState.MyAnts) {
+				Location loc = (Location)ant;
 				//Build the state per ant.
-				Location target;
-				Action nextAction = null;
 
-				State state = buildState(gameState, ant);
+				Direction nextDirection = Direction.North;
 
 				if (useLearned)
 				{
 					// Use learned Q values
 					double maxQ = double.MinValue;
-					foreach(KeyValuePair<Action, double>pair in Q[state])
+					List<Direction> directions = new List<Direction>();
+					foreach(KeyValuePair<Direction, double>pair in Q[loc])
 					{
-						Action action = pair.Key;
+						Direction dir = pair.Key;
 						double q = pair.Value;
-						if (q > maxQ && state.Targets[action.Parameter] != null)
+						if (q > maxQ)
 						{
+							directions.Clear();
 							maxQ = q;
-							nextAction = action;
+						}
+						if (q >= maxQ)
+						{
+							directions.Add(dir);
 						}
 					}
+					nextDirection = directions[new Random().Next(directions.Count)];
 				}
 				else {
 					// Random
-					int distance;
-					do {
-						nextAction = actions[new Random().Next(actions.Count)];
-						distance = state.Distances[nextAction.Parameter];
-					}
-					while(distance == maxDistance + 1 || state.Targets[nextAction.Parameter] == null);
+					Direction[] directions = (Direction[]) Enum.GetValues(typeof(Direction));
+					nextDirection = directions[new Random().Next(directions.Length)];
 				}
-				
-				target = state.Targets[nextAction.Parameter];
 
-				if (target == null)
-					continue;
+				performedMoves[loc] = nextDirection;
 
-				performedActions[state] = nextAction;
-
-				List<Direction> directions = (List<Direction>)(gameState.GetDirections(ant, target));
-				if (directions.Count == 0)
-					continue;
-
-				Direction direction = directions[new Random().Next(directions.Count)];
-				if (nextAction.Direction == ActionDirection.AwayFrom)
-					direction = direction.Opposite();
-
-				IssueOrder(ant, direction);
+				IssueOrder(loc, nextDirection);
 			}
 		}
-		//Is ugly
-		public State buildState(IGameState gameState, Location ant)
-		{
-			Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
-			Dictionary<StateParameter, Location> targets = new Dictionary<StateParameter, Location>();
-			
-			int foodDistance = maxDistance + 1;
-			List<Location> closestFoods = new List<Location>();
-			foreach(Location food in gameState.FoodTiles) {
-				int delta = gameState.GetDistance(ant, food);
-				if (delta < foodDistance)
-				{ 
-					closestFoods.Clear();
-					foodDistance = delta;
-				}
-				if (delta <= foodDistance) {
-					closestFoods.Add(food);
-				}
-			}
-			Location closestFood = closestFoods.Count == 0 ? null : closestFoods[new Random().Next(closestFoods.Count)];
 
-			distances[StateParameter.Food] = foodDistance;
-			targets[StateParameter.Food] = closestFood;
-
-			/*
-			int friendDistance = maxDistance + 1;
-			List<Location> closestFriends = new List<Location>();
-			foreach(Location friend in gameState.MyAnts) {
-				if (friend == ant) continue;
-				int delta = gameState.GetDistance(ant, friend);
-				if (delta < friendDistance) 
-				{
-					closestFriends.Clear();
-					friendDistance = delta;
-				}
-				if (delta <= friendDistance) {
-					closestFriends.Add(friend);
-				}
-			}
-			Location closestFriend = closestFriends.Count == 0 ? null : closestFriends[new Random().Next(closestFriends.Count)];
-
-			distances[StateParameter.OwnAnt] = friendDistance;
-			targets[StateParameter.OwnAnt] = closestFriend;
-
-			bool onHill = false;
-			Location closestHill = null;
-			foreach(Location hill in gameState.MyHills) {
-				if (ant == hill)
-				{
-					onHill = true;
-					closestHill = hill;
-					break;
-				}
-			}
-			distances[StateParameter.OwnHill] = onHill ? 0 : 1;
-			targets[StateParameter.OwnHill] = closestHill;
-			*/
-
-			return new State(distances, targets);
-		}
-
-		public double MaxQ(State state)
+		public double MaxQ(Location loc)
 		{
 			double maxQ = double.MinValue;
-			foreach(Action action in actions)
+			foreach (Direction dir in (Direction[]) Enum.GetValues(typeof(Direction)))
 			{
-				double q = Q[state][action];
+				double q = Q[loc][dir];
 				if (q > maxQ)
 					maxQ = q;
 			}
