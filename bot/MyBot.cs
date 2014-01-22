@@ -8,15 +8,17 @@ namespace Ants {
 	class MyBot : Bot {
 		private Dictionary<Location, Dictionary<Direction, double>> Qabsolute;
 		private Dictionary<State, Dictionary<Action, double>> Qrelative;
-		private const double Alpha = 1.0; 
-		private const int Beta = 100; 
-		private const double Gamma = 0.1;
-		private Dictionary<Location, Direction> performedMoves = new Dictionary<Location, Direction>();
-		private Dictionary<State, List<OurTuple<Action, Location>>> performedActions = new Dictionary<State, List<OurTuple<Action, Location>>>();
+		private double Alpha; 
+		private const int Beta = 10; 
+		private const double Gamma = 0.3;
+		private Dictionary<Location, Location> performedMoves = new Dictionary<Location, Location>();
+		private List<OurTuple<State, Action, Location, Location>> performedActions = new List<OurTuple<State, Action, Location, Location>>();
 		private string logAbsolute;
 		private string logRelative;
+		private string logTurns;
 		private bool useLearned;
 		private int maxDistance;
+		private int Turns;
 		private IGameState gameState;
 		private List<Action> actions = new List<Action>();
 
@@ -25,18 +27,29 @@ namespace Ants {
 			this.gameState = gameState;
 			initAbsoluteQ();
 			initRelativeQ();
+			initTurns();
 
-			//Will we do random moves this turn, learning goes faster.
 			useLearned = new Random().Next(0,100) < Beta;
+			Alpha = 0.1;//1.0 / ++this.Turns;
 
-			updateAbsoluteQ();
 			updateRelativeQ();
+			updateAbsoluteQ();
 
 			// loop through all my ants and try to give them orders
 			orderAnts();
 
 			writeAbsoluteLog();
-			writeRelativeLog();			
+			writeRelativeLog();
+			writeTurnLog();			
+		}
+
+		public void writeTurnLog()
+		{
+			FileStream fs = new FileStream(logTurns, FileMode.Create, FileAccess.Write);
+			StreamWriter sw = new StreamWriter(fs);
+			sw.WriteLine(this.Turns);
+			sw.Close();
+			fs.Close();
 		}
 
 		public void writeAbsoluteLog()
@@ -62,6 +75,7 @@ namespace Ants {
 		{
 			FileStream fs = new FileStream(logRelative, FileMode.Create, FileAccess.Write);
 			StreamWriter sw = new StreamWriter(fs);
+
 			foreach(KeyValuePair<State, Dictionary<Action, double>> pair in Qrelative)
 			{
 				State state = pair.Key;
@@ -77,6 +91,19 @@ namespace Ants {
 			fs.Close();
 		}
 
+		public void initTurns()
+		{
+			logTurns = "Turns";
+			if(File.Exists(logTurns))
+			{
+				FileStream fs = new FileStream(logTurns, FileMode.Open, FileAccess.Read);
+				StreamReader sr = new StreamReader(fs);
+				this.Turns = int.Parse(sr.ReadLine());
+				sr.Close();
+				fs.Close();
+			}
+		}
+
 		public void initAbsoluteQ()
 		{
 			if (Qabsolute != null) return;
@@ -85,48 +112,48 @@ namespace Ants {
 
 			Dictionary<Location, Dictionary<Direction, double>> knownQ = new Dictionary<Location, Dictionary<Direction, double>>();
 
-			if(!File.Exists(logAbsolute)) {
-				File.Create(logAbsolute);
-			}
+			if(File.Exists(logAbsolute)) {
 
-			FileStream fs = new FileStream(logAbsolute, FileMode.Open, FileAccess.Read);
-			StreamReader sr = new StreamReader(fs);
-			string line;
-			while ((line = sr.ReadLine()) != null)
-			{
-				string[] parts = line.Split();
-				Location loc = new Location(parts[0]);
 
-				Direction dir;
-				switch (parts[1][0])
+				FileStream fs = new FileStream(logAbsolute, FileMode.Open, FileAccess.Read);
+				StreamReader sr = new StreamReader(fs);
+				string line;
+				while ((line = sr.ReadLine()) != null)
 				{
-					case 'e':
-						dir = Direction.East;
-						break;
+					string[] parts = line.Split();
+					Location loc = new Location(parts[0]);
 
-					case 'n':
-						dir = Direction.North;
-						break;
+					Direction dir;
+					switch (parts[1][0])
+					{
+						case 'e':
+							dir = Direction.East;
+							break;
 
-					case 's':
-						dir = Direction.South;
-						break;
+						case 'n':
+							dir = Direction.North;
+							break;
 
-					case 'w':
-					default:
-						dir = Direction.West;
-						break;
+						case 's':
+							dir = Direction.South;
+							break;
+
+						case 'w':
+						default:
+							dir = Direction.West;
+							break;
+					}
+
+					double q = double.Parse(parts[2]);
+					if (!knownQ.ContainsKey(loc))
+					{
+						knownQ[loc] = new Dictionary<Direction, double>();
+					}
+					knownQ[loc][dir] = q;
 				}
-
-				double q = double.Parse(parts[2]);
-				if (!knownQ.ContainsKey(loc))
-				{
-					knownQ[loc] = new Dictionary<Direction, double>();
-				}
-				knownQ[loc][dir] = q;
+				sr.Close();
+				fs.Close();
 			}
-			sr.Close();
-			fs.Close();
 
 			Qabsolute = new Dictionary<Location, Dictionary<Direction, double>>();
 
@@ -152,34 +179,33 @@ namespace Ants {
 		
 		public void initRelativeQ()
 		{
-			if (Qrelative == null) return;
+			if (Qrelative != null) return;
 
 		 	logRelative = "Relative" + gameState.Width + "," + gameState.Height + ".Q";
 
 			Dictionary<int, Dictionary<int, double>> knownQ = new Dictionary<int, Dictionary<int, double>>();
 
-			if(!File.Exists(logRelative))
+			if(File.Exists(logRelative))
 			{
-				File.Create(logRelative);
-			}
 
-			FileStream fs = new FileStream(logRelative, FileMode.Open, FileAccess.Read);
-			StreamReader sr = new StreamReader(fs);
-			string line;
-			while ((line = sr.ReadLine()) != null)
-			{
-				string[] parts = line.Split(',');
-				int stateCode = int.Parse(parts[0]);
-				int actionCode = int.Parse(parts[1]);
-				double q = double.Parse(parts[2]);
-				if (!knownQ.ContainsKey(stateCode))
+				FileStream fs = new FileStream(logRelative, FileMode.Open, FileAccess.Read);
+				StreamReader sr = new StreamReader(fs);
+				string line;
+				while ((line = sr.ReadLine()) != null)
 				{
-					knownQ[stateCode] = new Dictionary<int, double>();
+					string[] parts = line.Split(',');
+					int stateCode = int.Parse(parts[0]);
+					int actionCode = int.Parse(parts[1]);
+					double q = double.Parse(parts[2]);
+					if (!knownQ.ContainsKey(stateCode))
+					{
+						knownQ[stateCode] = new Dictionary<int, double>();
+					}
+					knownQ[stateCode][actionCode] = q;
 				}
-				knownQ[stateCode][actionCode] = q;
+				sr.Close();
+				fs.Close();
 			}
-			sr.Close();
-			fs.Close();
 
 			maxDistance = gameState.Width / 2 + gameState.Height / 2;
 			Qrelative = new Dictionary<State, Dictionary<Action, double>>();
@@ -215,12 +241,12 @@ namespace Ants {
 
 		public void updateAbsoluteQ()
 		{
-			foreach(KeyValuePair<Location, Direction>pair in performedMoves)
+			foreach(KeyValuePair<Location, Location>pair in performedMoves)
 			{
 				Location loc = pair.Key;
-				Direction dir = pair.Value;
+				Location nextLocation = pair.Value;
 
-				Location nextLocation = gameState.GetDestination(loc, dir);
+				Direction dir = gameState.GetDirections(loc, nextLocation).First();
 
 				int r = 0;
 				if (!gameState.MyAnts.Contains(nextLocation) && 
@@ -240,25 +266,32 @@ namespace Ants {
 
 		public void updateRelativeQ()
 		{
-			foreach(KeyValuePair<State, List<OurTuple<Action, Location>>>pair in performedActions)
+			foreach(OurTuple<State, Action, Location, Location>tuple in performedActions)
 			{
-				State fromState = pair.Key;
+				State fromState = tuple.Item1;
+				Action action = tuple.Item2;
+				Location nextLocation = tuple.Item3;
+				Location friend = tuple.Item4;
 
-				foreach(OurTuple<Action, Location>tuple in pair.Value)
-				{
-					Action action = tuple.Item1;
-					Location nextLocation = tuple.Item2;
+				Location friendNextLocation = performedMoves[friend];
+				//Console.Error.WriteLine("Next location: " + nextLocation);
+				//Console.Error.WriteLine("Friend location: " + friend);
+				//Console.Error.WriteLine("Friend next location: " + friendNextLocation);
+				//Console.Error.WriteLine("gameState.DeadTiles.Contains(nextLocation)" + gameState.DeadTiles.Contains(nextLocation));
+				//Console.Error.WriteLine("gameState.MyAnts.Contains(friendNextLocation)" + gameState.MyAnts.Contains(friendNextLocation));
+				//Console.Error.WriteLine("gameState.DeadTiles.Contains(friendNextLocation)" + gameState.DeadTiles.Contains(friendNextLocation));
+				int r = 0;
+				if (nextLocation == friendNextLocation ||
+						(gameState.DeadTiles.Contains(nextLocation) &&
+							!gameState.MyAnts.Contains(friendNextLocation) && 
+						 	!gameState.DeadTiles.Contains(friendNextLocation)))
+					r = -1000;
 
-					State nextState = fromState.ApplyAction(action);
+				State nextState = fromState.ApplyAction(action);
 
-					int r = 0;
-					if (gameState.DeadTiles.Contains(nextLocation))
-						r = -200;
-
-					double q = Qrelative[fromState][action];
-					double maxQ = MaxRelativeQ(nextState);
-					Qrelative[fromState][action] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
-				}
+				double q = Qrelative[fromState][action];
+				double maxQ = MaxRelativeQ(nextState);
+				Qrelative[fromState][action] = (1.0 - Alpha) * q + Alpha * (r + Gamma * maxQ);
 			}
 			performedActions.Clear();
 		}
@@ -269,11 +302,11 @@ namespace Ants {
 				Location loc = (Location)ant;
 				//Build the state per ant.
 
+				//Console.Error.WriteLine("ANT " + loc);
+
 				State state = buildState(ant);
 
 				Direction nextDirection = Direction.North;
-				
-				List<OurTuple<Action, Location>> actions = new List<OurTuple<Action, Location>>();
 					
 				if (useLearned)
 				{
@@ -290,7 +323,7 @@ namespace Ants {
 						{
 							Action action;
 
-							List<Direction> directionsToward = (List<Direction>)gameState.GetDirections(ant, friend);
+							List<Direction> directionsToward = (List<Direction>)gameState.GetDirections(loc, friend);
 							if (directionsToward.Contains(dir))
 							{
 								action = new Action(StateParameter.OwnAnt, ActionDirection.Towards);
@@ -319,85 +352,39 @@ namespace Ants {
 					// Random
 					Direction[] directions = (Direction[]) Enum.GetValues(typeof(Direction));
 					nextDirection = directions[new Random().Next(directions.Length)];
-					
-					foreach(Location friend in state.Targets[StateParameter.OwnAnt])
-					{
-						Action action;
-
-						List<Direction> directionsToward = (List<Direction>)gameState.GetDirections(ant, friend);
-						if (directionsToward.Contains(nextDirection))
-						{
-							action = new Action(StateParameter.OwnAnt, ActionDirection.Towards);
-						}
-						else {
-							action = new Action(StateParameter.OwnAnt, ActionDirection.AwayFrom);
-						}
-
-						actions.Add(new OurTuple<Action, Location>(action, friend));
-					}
 				}
 
-				performedMoves[loc] = nextDirection;
-				performedActions[state] = actions;
+				//Console.Error.WriteLine("Next direction: " + nextDirection);
+
+				Location nextLocation = gameState.GetDestination(loc, nextDirection);
+
+				//Console.Error.WriteLine("Next location: " + nextLocation);
+
+				foreach(Location friend in state.Targets[StateParameter.OwnAnt])
+				{
+					Action action;
+
+					List<Direction> directionsToward = (List<Direction>)gameState.GetDirections(loc, friend);
+					if (directionsToward.Contains(nextDirection))
+					{
+						action = new Action(StateParameter.OwnAnt, ActionDirection.Towards);
+					}
+					else {
+						action = new Action(StateParameter.OwnAnt, ActionDirection.AwayFrom);
+					}
+
+					//Console.Error.WriteLine("Next location: " + nextLocation);
+					//Console.Error.WriteLine("Friend location: " + friend);
+
+					performedActions.Add(new OurTuple<State, Action, Location, Location>(state, action, nextLocation, friend));
+				}
+
+				performedMoves[loc] = nextLocation;
 
 				IssueOrder(loc, nextDirection);
 			}
 		}
 
-		/*
-		public void orderAnts(IGameState gameState)
-		{
-			foreach (Ant ant in gameState.MyAnts) {
-				//Build the state per ant.
-				Location target;
-				Action nextAction = null;
-
-				State state = buildState(gameState, ant);
-
-				if (useLearned)
-				{
-					// Use learned Q values
-					double maxQ = double.MinValue;
-					foreach(KeyValuePair<Action, double>pair in Q[state])
-					{
-						Action action = pair.Key;
-						double q = pair.Value;
-						if (q > maxQ && state.Targets[action.Parameter] != null)
-						{
-							maxQ = q;
-							nextAction = action;
-						}
-					}
-				}
-				else {
-					// Random
-					int distance;
-					do {
-						nextAction = actions[new Random().Next(actions.Count)];
-						distance = state.Distances[nextAction.Parameter];
-					}
-					while(distance == maxDistance + 1 || state.Targets[nextAction.Parameter] == null);
-				}
-				
-				target = state.Targets[nextAction.Parameter];
-
-				if (target == null)
-					continue;
-
-				performedActions[state] = nextAction;
-
-				List<Direction> directions = (List<Direction>)(gameState.GetDirections(ant, target));
-				if (directions.Count == 0)
-					continue;
-
-				Direction direction = directions[new Random().Next(directions.Count)];
-				if (nextAction.Direction == ActionDirection.AwayFrom)
-					direction = direction.Opposite();
-
-				IssueOrder(ant, direction);
-			}
-		}
-		*/
 		//Is ugly
 		public State buildState(Location ant)
 		{
