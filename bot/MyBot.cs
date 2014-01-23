@@ -11,8 +11,8 @@ namespace Ants
     private Dictionary<Location, Dictionary<Direction, double>> Qabsolute;
     private Dictionary<State, Dictionary<Action, double>> Qrelative;
     private double Alpha;
-    private const int Beta = 100;
-    private const double Gamma = 0.3;
+    private const int Beta = 10; //How much we learn each turn
+    private const double Gamma = 0.0;
     private Dictionary<Location, Location> performedMoves = new Dictionary<Location, Location>();
     private List<PerformedAction> performedActions = new List<PerformedAction>();
     private string logAbsolute;
@@ -254,20 +254,7 @@ namespace Ants
         Location nextLocation = performedAction.nextLocation;
         Ant friend = performedAction.friend;
 
-        Location friendNextLocation = performedMoves[friend];/*
-        Console.Error.WriteLine("Own ant location: " + ownAnt);
-        Console.Error.WriteLine("Next location: " + nextLocation);
-        Console.Error.WriteLine("Friend location: " + friend);
-        Console.Error.WriteLine("Friend next location: " + friendNextLocation);
-        Console.Error.WriteLine("Action direction: " + action.Direction);
-        Console.Error.WriteLine("gameState.MyAnts.Contains(nextLocation): " +
-                                gameState.MyAnts.Contains(nextLocation));
-        Console.Error.WriteLine("gameState.DeadTiles.Contains(nextLocation): " +
-                                gameState.DeadTiles.Contains(nextLocation));
-        Console.Error.WriteLine("gameState.MyAnts.Contains(friendNextLocation): " +
-                                gameState.MyAnts.Contains(friendNextLocation));
-        Console.Error.WriteLine("gameState.DeadTiles.Contains(friendNextLocation): " +
-                                gameState.DeadTiles.Contains(friendNextLocation));/*/
+        Location friendNextLocation = performedMoves[friend];
 
         if (!gameState.DeadTiles.Contains(nextLocation) &&
             !gameState.MyAnts.Contains(nextLocation))
@@ -280,7 +267,6 @@ namespace Ants
         if (gameState.DeadTiles.Contains(friendNextLocation) ||
             gameState.MyAnts.Contains(friendNextLocation))
         {
-          //Console.Error.WriteLine("Friend move gelukt");
           // Friend move gelukt
           if (nextLocation == friendNextLocation)
           {
@@ -289,7 +275,6 @@ namespace Ants
         }
         else
         {
-          //Console.Error.WriteLine("Friend move niet gelukt");
           // Friend move niet gelukt
           if (nextLocation == friend)
           {
@@ -312,9 +297,7 @@ namespace Ants
       {
         Location loc = (Location)ant;
         //Build the state per ant.
-        //Console.Error.WriteLine("ANT " + loc);
         State state = buildState(ant);
-
         Direction nextDirection = Direction.North;
 
         if (useLearned)
@@ -365,11 +348,7 @@ namespace Ants
           nextDirection = directions[random.Next(directions.Length)];
         }
 
-        //Console.Error.WriteLine("Next direction: " + nextDirection);
-
         Location nextLocation = gameState.GetDestination(loc, nextDirection);
-
-        //Console.Error.WriteLine("Next location: " + nextLocation);
 
         foreach (Ant friend in state.Targets[StateParameter.OwnAnt])
         {
@@ -385,9 +364,6 @@ namespace Ants
             action = new Action(StateParameter.OwnAnt, ActionDirection.AwayFrom);
           }
 
-          //Console.Error.WriteLine("Next location: " + nextLocation);
-          //Console.Error.WriteLine("Friend location: " + friend);
-
           performedActions.Add(new PerformedAction(state, action, ant, nextLocation, friend));
         }
 
@@ -397,7 +373,7 @@ namespace Ants
       }
     }
 
-    //Is ugly
+
     public State buildState(Location ant)
     {
       Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
