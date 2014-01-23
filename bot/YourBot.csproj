@@ -57,6 +57,7 @@
     <Compile Include="State.cs" />
     <Compile Include="Action.cs" />
     <Compile Include="OurTuple.cs" />
+    <Compile Include="PerformedAction.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="VERSION" />
