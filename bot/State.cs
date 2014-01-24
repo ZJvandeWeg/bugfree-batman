@@ -23,6 +23,7 @@ class State
 
     public override int GetHashCode()
     {
+        // HashCode is based on all state parameters and their respective distances
         int code = 0;
         foreach (KeyValuePair<StateParameter, int> pair in Distances)
         {

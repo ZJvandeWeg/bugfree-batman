@@ -10,7 +10,7 @@ namespace Ants
   {
     private Dictionary<Location, Dictionary<Direction, double>> Qabsolute;
     private Dictionary<State, Dictionary<Action, double>> Qrelative;
-    private double Alpha;
+    private const double Alpha = 0.001;
     private const int Beta = 10; //How much we learn each turn
     private const double Gamma = 0.0;
     private Dictionary<Location, Location> performedMoves = new Dictionary<Location, Location>();
@@ -28,16 +28,14 @@ namespace Ants
     {
       this.random = new Random();
       this.gameState = gameState;
+      this.useLearned = random.Next(0, 100) < Beta;
+
       initAbsoluteQ();
       initRelativeQ();
-
-      useLearned = random.Next(0, 100) < Beta;
-      Alpha = 0.001;
 
       updateRelativeQ();
       updateAbsoluteQ();
 
-      // loop through all my ants and try to give them orders
       orderAnts();
 
       writeAbsoluteLog();
@@ -46,6 +44,8 @@ namespace Ants
 
     public void writeAbsoluteLog()
     {
+      // Write the absolute Q-table down to a file.
+
       FileStream fs = new FileStream(logAbsolute, FileMode.Create, FileAccess.Write);
       StreamWriter sw = new StreamWriter(fs);
 
@@ -66,6 +66,8 @@ namespace Ants
 
     public void writeRelativeLog()
     {
+      // Write the relative Q-table down to a file.
+
       FileStream fs = new FileStream(logRelative, FileMode.Create, FileAccess.Write);
       StreamWriter sw = new StreamWriter(fs);
 
@@ -92,10 +94,12 @@ namespace Ants
       logAbsolute = "Absolute" + gameState.Width + "," + gameState.Height + ".Q";
 
       Dictionary<Location, Dictionary<Direction, double>> knownQ = new
-      Dictionary<Location, Dictionary<Direction, double>>();
+        Dictionary<Location, Dictionary<Direction, double>>();
 
       if (File.Exists(logAbsolute))
       {
+        // Read the known absolute Q-values from the log.
+
         FileStream fs = new FileStream(logAbsolute, FileMode.Open, FileAccess.Read);
         StreamReader sr = new StreamReader(fs);
         string line;
@@ -136,6 +140,8 @@ namespace Ants
         fs.Close();
       }
 
+      // Initialize the absolute Q-table, taking known Q-values into account.
+
       Qabsolute = new Dictionary<Location, Dictionary<Direction, double>>();
 
       for (int x = 0; x < gameState.Width; x++)
@@ -148,6 +154,8 @@ namespace Ants
           foreach (Direction dir in (Direction[]) Enum.GetValues(typeof(Direction)))
           {
             double q = 0.0;
+
+            // Take known Q-value into account
             if (knownQ.ContainsKey(loc) && knownQ[loc].ContainsKey(dir))
             {
               q = knownQ[loc][dir];
@@ -166,6 +174,7 @@ namespace Ants
 
       if (File.Exists(logRelative))
       {
+        // Read the known absolute Q-values from the log.
 
         FileStream fs = new FileStream(logRelative, FileMode.Open, FileAccess.Read);
         StreamReader sr = new StreamReader(fs);
@@ -186,9 +195,11 @@ namespace Ants
         fs.Close();
       }
 
+      // Initialize the absolute Q-table, taking known Q-values into account.
 
       Qrelative = new Dictionary<State, Dictionary<Action, double>>();
 
+      // Determine all possible actions, that is [towards] and [away from] for every state param.
       foreach (StateParameter parameter in (StateParameter[]) Enum.GetValues(typeof(StateParameter)))
       {
         Action a = new Action(parameter, ActionDirection.Towards);
@@ -197,7 +208,8 @@ namespace Ants
         actions.Add(a);
       }
 
-      //This is ugly
+      // This code is not actually prepared to handle multiple StateParameters,
+      // but this is not an issue because right now we only have one anyway: OwnAnt.
       Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
       for (int i = 0; i <= maxDistance; i++)
       {
@@ -211,6 +223,8 @@ namespace Ants
           int stateCode = s.GetHashCode();
           int actionCode = a.GetHashCode();
           double q = 0.0;
+
+          // Take known Q-value into account
           if (knownQ.ContainsKey(stateCode) && knownQ[stateCode].ContainsKey(actionCode))
           {
             q = knownQ[stateCode][actionCode];
@@ -222,6 +236,7 @@ namespace Ants
 
     public void updateAbsoluteQ()
     {
+      // For every move performed in the last turn, see if we walked into water.
       foreach (KeyValuePair<Location, Location>pair in performedMoves)
       {
         Location loc = pair.Key;
@@ -230,6 +245,8 @@ namespace Ants
         Direction dir = gameState.GetDirections(loc, nextLocation).First();
 
         int r = 0;
+        // If our move wasn't successful, i.e. we didn't end up where we wanted to go but stayed in place,
+        // this indicates a blocked move: WATER.
         if (!gameState.MyAnts.Contains(nextLocation) &&
             !gameState.DeadTiles.Contains(nextLocation) &&
             !gameState.DeadTiles.Contains(loc))
@@ -246,6 +263,7 @@ namespace Ants
 
     public void updateRelativeQ()
     {
+      // For every action performed in the previous turn, see if it resulted in DEATH.
       foreach (PerformedAction performedAction in performedActions)
       {
         State fromState = performedAction.fromState;
@@ -256,6 +274,8 @@ namespace Ants
 
         Location friendNextLocation = performedMoves[friend];
 
+        // If our move wasn't successful, i.e. if we walked into water and stayed in place,
+        // whether we died can't actually be ascribed to our last move.
         if (!gameState.DeadTiles.Contains(nextLocation) &&
             !gameState.MyAnts.Contains(nextLocation))
         {
@@ -267,7 +287,7 @@ namespace Ants
         if (gameState.DeadTiles.Contains(friendNextLocation) ||
             gameState.MyAnts.Contains(friendNextLocation))
         {
-          // Friend move gelukt
+          // If our closest friend's move was successful, and we both moved to the same place: DEATH.
           if (nextLocation == friendNextLocation)
           {
             r = -1000;
@@ -275,7 +295,7 @@ namespace Ants
         }
         else
         {
-          // Friend move niet gelukt
+          // If our closest friend's move was not successful, but we moved to their place: DEATH.
           if (nextLocation == friend)
           {
             r = -1000;
@@ -293,10 +313,11 @@ namespace Ants
 
     public void orderAnts()
     {
+      // Make a move for every ant
       foreach (Ant ant in gameState.MyAnts)
       {
         Location loc = (Location)ant;
-        //Build the state per ant.
+
         State state = buildState(ant);
         Direction nextDirection = Direction.North;
 
@@ -305,17 +326,23 @@ namespace Ants
           // Use learned Q values
           double maxQ = double.MinValue;
           List<Direction> directions = new List<Direction>();
+
+          // For every possible irection to move in, calculate the total Q-value.
           foreach (KeyValuePair<Direction, double>pair in Qabsolute[loc])
           {
             Direction dir = pair.Key;
             double absoluteQ = pair.Value;
 
+            // Calculate the relative Q-value for moving in this direction.
             double relativeQ = 0.0;
             foreach (Location friend in state.Targets[StateParameter.OwnAnt])
             {
               Action action;
 
               List<Direction> directionsToward = (List<Direction>)gameState.GetDirections(loc, friend);
+
+              // If the direction in question is one of the directions we can use to get to the friend,
+              // it's a "towards" action, otherwise "away from"
               if (directionsToward.Contains(dir))
               {
                 action = new Action(StateParameter.OwnAnt, ActionDirection.Towards);
@@ -325,6 +352,7 @@ namespace Ants
                 action = new Action(StateParameter.OwnAnt, ActionDirection.AwayFrom);
               }
 
+              // Read and add the Q-value for this state/action.
               relativeQ += Qrelative[state][action];
             }
             double q = absoluteQ + relativeQ;
@@ -343,18 +371,22 @@ namespace Ants
         }
         else
         {
-          // Random
+          // Pick a random direction
           Direction[] directions = (Direction[]) Enum.GetValues(typeof(Direction));
           nextDirection = directions[random.Next(directions.Length)];
         }
 
         Location nextLocation = gameState.GetDestination(loc, nextDirection);
 
+        // Make not of all performed relative actions
         foreach (Ant friend in state.Targets[StateParameter.OwnAnt])
         {
           Action action;
 
           List<Direction> directionsToward = (List<Direction>)gameState.GetDirections(loc, friend);
+
+          // If the direction in question is one of the directions we can use to get to the friend,
+          // it's a "towards" action, otherwise "away from"
           if (directionsToward.Contains(nextDirection))
           {
             action = new Action(StateParameter.OwnAnt, ActionDirection.Towards);
@@ -367,6 +399,7 @@ namespace Ants
           performedActions.Add(new PerformedAction(state, action, ant, nextLocation, friend));
         }
 
+        // Make not of the performed move.
         performedMoves[loc] = nextLocation;
 
         IssueOrder(loc, nextDirection);
@@ -378,8 +411,9 @@ namespace Ants
     {
       Dictionary<StateParameter, int> distances = new Dictionary<StateParameter, int>();
       Dictionary<StateParameter, List<Location>> targets = new
-      Dictionary<StateParameter, List<Location>>();
+        Dictionary<StateParameter, List<Location>>();
 
+      // Find the closest friends
       int friendDistance = maxDistance;
       List<Location> closestFriends = new List<Location>();
       foreach (Location friend in gameState.MyAnts)
